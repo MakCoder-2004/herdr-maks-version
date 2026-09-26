@@ -408,6 +408,8 @@ pub struct KeysConfig {
     pub rename_pane: BindingConfig,
     /// Open the focused pane scrollback in $EDITOR. Default: "prefix+e".
     pub edit_scrollback: BindingConfig,
+    /// Open the focused pane's latest staged large paste in $EDITOR. Default: "prefix+shift+e".
+    pub edit_staged_paste: BindingConfig,
     pub clear_pane: BindingConfig,
     /// Enter keyboard copy mode for the focused pane. Default: "prefix+[".
     pub copy_mode: BindingConfig,
@@ -540,6 +542,8 @@ pub(crate) struct KeysConfigOverlay {
     rename_pane: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     edit_scrollback: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit_staged_paste: Option<BindingConfig>,
     clear_pane: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     copy_mode: Option<BindingConfig>,
@@ -651,6 +655,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(close_tab);
         apply_field!(rename_pane);
         apply_field!(edit_scrollback);
+        apply_field!(edit_staged_paste);
         apply_field!(clear_pane);
         apply_field!(copy_mode);
         apply_field!(focus_pane_left);
@@ -756,6 +761,7 @@ impl KeysConfig {
         copy_effective_action_field!(close_tab, keybinds.close_tab);
         copy_effective_action_field!(rename_pane, keybinds.rename_pane);
         copy_effective_action_field!(edit_scrollback, keybinds.edit_scrollback);
+        copy_effective_action_field!(edit_staged_paste, keybinds.edit_staged_paste);
         copy_effective_action_field!(clear_pane, keybinds.clear_pane);
         copy_effective_action_field!(copy_mode, keybinds.copy_mode);
         copy_effective_action_field!(focus_pane_left, keybinds.focus_pane_left);
@@ -1125,6 +1131,7 @@ impl Default for KeysConfig {
             close_tab: BindingConfig::one("prefix+shift+x"),
             rename_pane: BindingConfig::one("prefix+shift+p"),
             edit_scrollback: BindingConfig::one("prefix+e"),
+            edit_staged_paste: BindingConfig::one("prefix+shift+e"),
             clear_pane: BindingConfig::default(),
             copy_mode: BindingConfig::one("prefix+["),
             focus_pane_left: BindingConfig::one("prefix+h"),

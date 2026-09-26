@@ -64,6 +64,7 @@ use crate::server::notifications::{
     should_forward_toast_to_clients, toast_message_from_state_change, toast_notify_kind,
 };
 use crate::server::pane_input::{
+    apply_client_agent_pane_input_events, apply_client_agent_popup_input_events,
     apply_client_pane_input_events, apply_client_popup_input_events, apply_terminal_attach_input,
     apply_terminal_attach_scroll, terminal_attach_mouse_position,
 };
@@ -2318,6 +2319,12 @@ impl HeadlessServer {
                 else {
                     return false;
                 };
+                let compact_large_pastes = self
+                    .app
+                    .state
+                    .terminal_id_for_pane(workspace_index, runtime_pane_id)
+                    .and_then(|terminal_id| self.app.state.terminals.get(&terminal_id))
+                    .is_some_and(|terminal| terminal.detected_agent.is_some());
                 let Some(runtime) = self.app.state.runtime_for_pane_in_workspace(
                     &self.app.terminal_runtimes,
                     workspace_index,
@@ -2379,7 +2386,12 @@ impl HeadlessServer {
                     return foreground_changed | geometry_changed;
                 };
                 let scroll_before = runtime.scroll_metrics();
-                if let Err(err) = apply_client_pane_input_events(runtime, &events) {
+                let input_result = if compact_large_pastes {
+                    apply_client_agent_pane_input_events(runtime, &events)
+                } else {
+                    apply_client_pane_input_events(runtime, &events)
+                };
+                if let Err(err) = input_result {
                     warn!(client_id, pane_id, err = %err, "targeted client shell input failed");
                 }
                 foreground_changed | geometry_changed || runtime.scroll_metrics() != scroll_before
@@ -2410,6 +2422,12 @@ impl HeadlessServer {
                 else {
                     return false;
                 };
+                let compact_large_pastes = self
+                    .app
+                    .state
+                    .terminals
+                    .get(&popup_terminal_id)
+                    .is_some_and(|terminal| terminal.detected_agent.is_some());
                 if popup_terminal_id.as_str() != terminal_id {
                     return false;
                 }
@@ -2457,7 +2475,12 @@ impl HeadlessServer {
                     return foreground_changed | geometry_changed;
                 };
                 let scroll_before = runtime.scroll_metrics();
-                if let Err(err) = apply_client_popup_input_events(runtime, &events) {
+                let input_result = if compact_large_pastes {
+                    apply_client_agent_popup_input_events(runtime, &events)
+                } else {
+                    apply_client_popup_input_events(runtime, &events)
+                };
+                if let Err(err) = input_result {
                     warn!(client_id, terminal_id, err = %err, "targeted client popup input failed");
                 }
                 foreground_changed | geometry_changed || runtime.scroll_metrics() != scroll_before

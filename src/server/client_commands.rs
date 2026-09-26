@@ -23,6 +23,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "pane.copy_motion",
     "pane.copy_search",
     "pane.edit_scrollback",
+    "pane.edit_staged_paste",
     "pane.focus",
     "pane.focus_direction",
     "pane.input.set",
@@ -296,6 +297,10 @@ mod tests {
         assert_eq!(
             actual.remove("pane.link.resolve").as_deref(),
             Some("f5e4a3e01453ae7b188f127ce951c12c20e0bebcc17cc364eeb6d1a01fd5bf81")
+        );
+        assert_eq!(
+            actual.remove("pane.edit_staged_paste").as_deref(),
+            Some("c0e1daac2eb3f6c21f631dc66004342775fe0779af71aa214ac765b873f09107")
         );
 
         assert_eq!(

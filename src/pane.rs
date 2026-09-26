@@ -1321,6 +1321,7 @@ pub struct PaneRuntime {
     child_pid: Arc<AtomicU32>,
     reported_cwd: Arc<Mutex<Option<std::path::PathBuf>>>,
     persistence_cwd: Mutex<Option<std::path::PathBuf>>,
+    last_staged_paste: Mutex<Option<std::path::PathBuf>>,
     cwd_process_exited: Arc<AtomicBool>,
     child_wait_completed: Option<Arc<AtomicBool>>,
     kitty_keyboard_flags: Arc<AtomicU16>,
@@ -2478,6 +2479,7 @@ impl PaneRuntime {
             child_pid,
             reported_cwd,
             persistence_cwd: Mutex::new(None),
+            last_staged_paste: Mutex::new(None),
             cwd_process_exited,
             child_wait_completed: None,
             kitty_keyboard_flags,
@@ -3068,6 +3070,7 @@ impl PaneRuntime {
             child_pid,
             reported_cwd,
             persistence_cwd: Mutex::new(None),
+            last_staged_paste: Mutex::new(None),
             cwd_process_exited: child_wait_completed.clone(),
             child_wait_completed: Some(child_wait_completed),
             kitty_keyboard_flags,
@@ -3583,6 +3586,19 @@ impl PaneRuntime {
         crate::platform::process_cwd(pid)
     }
 
+    pub(crate) fn remember_staged_paste(&self, path: std::path::PathBuf) {
+        if let Ok(mut latest) = self.last_staged_paste.lock() {
+            *latest = Some(path);
+        }
+    }
+
+    pub(crate) fn last_staged_paste_path(&self) -> Option<std::path::PathBuf> {
+        self.last_staged_paste
+            .lock()
+            .ok()
+            .and_then(|latest| latest.clone())
+    }
+
     pub fn cwd_for_persistence(&self) -> Option<std::path::PathBuf> {
         let pid = self.child_pid.load(Ordering::Acquire);
         let exited = self.cwd_process_exited.load(Ordering::Acquire);
@@ -3782,6 +3798,7 @@ impl PaneRuntime {
                 child_pid: Arc::new(AtomicU32::new(0)),
                 reported_cwd: Arc::new(Mutex::new(None)),
                 persistence_cwd: Mutex::new(None),
+                last_staged_paste: Mutex::new(None),
                 cwd_process_exited: Arc::new(AtomicBool::new(false)),
                 child_wait_completed: None,
                 kitty_keyboard_flags: Arc::new(AtomicU16::new(0)),
@@ -4942,6 +4959,7 @@ mod tests {
         let runtime = PaneRuntime {
             cwd_process_exited: Arc::new(AtomicBool::new(false)),
             persistence_cwd: Mutex::new(None),
+            last_staged_paste: Mutex::new(None),
             pane_id,
             terminal,
             io: PaneRuntimeIo::TestChannel {
@@ -4981,6 +4999,7 @@ mod tests {
         let runtime = PaneRuntime {
             cwd_process_exited: Arc::new(AtomicBool::new(false)),
             persistence_cwd: Mutex::new(None),
+            last_staged_paste: Mutex::new(None),
             pane_id,
             terminal,
             io: PaneRuntimeIo::TestChannel {

@@ -222,6 +222,30 @@ impl App {
         }
     }
 
+    pub(super) fn handle_pane_edit_staged_paste(
+        &mut self,
+        id: String,
+        target: PaneTarget,
+    ) -> String {
+        let Some((ws_idx, pane_id)) = self.parse_pane_id(&target.pane_id) else {
+            return pane_not_found(id, &target.pane_id);
+        };
+        let is_focused = self.state.active == Some(ws_idx)
+            && self
+                .state
+                .workspaces
+                .get(ws_idx)
+                .and_then(crate::workspace::Workspace::focused_pane_id)
+                == Some(pane_id);
+        if !is_focused {
+            return encode_error(id, "stale_pane_target", "pane is no longer focused");
+        }
+        match self.open_focused_staged_paste_in_editor() {
+            Ok(()) => encode_success(id, ResponseResult::Ok {}),
+            Err(err) => encode_error(id, "staged_paste_editor_failed", err.to_string()),
+        }
+    }
+
     pub(crate) fn pane_selection_text(
         &self,
         params: &PaneSelectionReadParams,
@@ -2677,6 +2701,22 @@ mod tests {
         app.state.active = None;
 
         let response = app.handle_pane_edit_scrollback(
+            "req".into(),
+            PaneTarget {
+                pane_id: public_pane_id,
+            },
+        );
+
+        assert_eq!(metadata_error_code(&response), "stale_pane_target");
+        assert!(app.overlay_panes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn api_edit_staged_paste_rejects_a_pane_that_is_no_longer_focused() {
+        let (mut app, public_pane_id, _pane_id) = app_with_scrollback_runtime();
+        app.state.active = None;
+
+        let response = app.handle_pane_edit_staged_paste(
             "req".into(),
             PaneTarget {
                 pane_id: public_pane_id,

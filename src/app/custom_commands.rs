@@ -325,19 +325,70 @@ impl App {
             .text;
 
         let path = write_scrollback_temp_file(&scrollback)?;
+        self.open_focused_file_in_editor(ws_idx, pane_id, &path, true, "opened scrollback")
+    }
 
-        let argv = match crate::platform::scrollback_editor_argv(&path) {
+    pub(crate) fn open_focused_staged_paste_in_editor(&mut self) -> std::io::Result<()> {
+        let ws_idx = self
+            .state
+            .active
+            .ok_or_else(|| std::io::Error::other("no active workspace"))?;
+        let ws = self
+            .state
+            .workspaces
+            .get(ws_idx)
+            .ok_or_else(|| std::io::Error::other("active workspace disappeared"))?;
+        let pane_id = ws
+            .focused_pane_id()
+            .ok_or_else(|| std::io::Error::other("no focused pane"))?;
+        let runtime = self
+            .state
+            .runtime_for_pane_in_workspace(&self.terminal_runtimes, ws_idx, pane_id)
+            .ok_or_else(|| std::io::Error::other("focused pane has no paste runtime"))?;
+        let path = runtime
+            .last_staged_paste_path()
+            .filter(|path| path.is_file())
+            .or_else(|| {
+                crate::server::clipboard_text::latest_staged_paste(runtime.cwd().as_deref())
+            })
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "the focused pane has no staged large paste to edit",
+                )
+            })?;
+
+        self.open_focused_file_in_editor(ws_idx, pane_id, &path, false, "opened staged paste")
+    }
+
+    fn open_focused_file_in_editor(
+        &mut self,
+        ws_idx: usize,
+        pane_id: crate::layout::PaneId,
+        path: &std::path::Path,
+        remove_when_closed: bool,
+        title: &str,
+    ) -> std::io::Result<()> {
+        let argv = match crate::platform::scrollback_editor_argv(path) {
             Ok(argv) => argv,
             Err(err) => {
-                let _ = fs::remove_file(&path);
+                if remove_when_closed {
+                    let _ = fs::remove_file(path);
+                }
                 return Err(err);
             }
         };
         let (env, _) = self.custom_command_env();
-        let new_pane = match self.spawn_overlay_argv_command(&argv, None, env, vec![path.clone()]) {
+        let temp_files = remove_when_closed
+            .then(|| path.to_path_buf())
+            .into_iter()
+            .collect();
+        let new_pane = match self.spawn_overlay_argv_command(&argv, None, env, temp_files) {
             Ok((_, new_pane)) => new_pane,
             Err(err) => {
-                let _ = fs::remove_file(&path);
+                if remove_when_closed {
+                    let _ = fs::remove_file(path);
+                }
                 return Err(err);
             }
         };
@@ -351,7 +402,7 @@ impl App {
         if let Some(public_pane_id) = self.public_pane_id(ws_idx, pane_id) {
             self.state.toast = Some(crate::app::state::ToastNotification {
                 kind: crate::app::state::ToastKind::Finished,
-                title: "opened scrollback".to_string(),
+                title: title.to_string(),
                 context: format!("focused pane {public_pane_id}"),
                 position: None,
                 target: None,

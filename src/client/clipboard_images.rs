@@ -29,7 +29,7 @@ pub(super) fn write_remote_image_to_server(
         bytes = image.bytes.len(),
         extension = image.extension,
         source,
-        "bridging local image to remote server"
+        "bridging local image to Herdr server"
     );
     write_to_server(
         stream,
@@ -48,7 +48,7 @@ pub(super) fn client_remote_image_paste_key(
     match config.remote_image_paste_key() {
         Ok(key) => key,
         Err(diagnostic) => {
-            warn!(diagnostic = %diagnostic, "local remote image paste key config diagnostic");
+            warn!(diagnostic = %diagnostic, "clipboard image paste key config diagnostic");
             None
         }
     }
@@ -58,8 +58,12 @@ pub(super) fn endpoint_accepts_local_images(
     remote_client_process: bool,
     endpoint_id: &super::endpoint::ClientEndpointId,
     active_surface_available: bool,
+    focused_pane_has_agent: bool,
 ) -> bool {
-    active_surface_available && (remote_client_process || !endpoint_id.is_local())
+    active_surface_available
+        && (remote_client_process
+            || !endpoint_id.is_local()
+            || cfg!(windows) && focused_pane_has_agent)
 }
 
 #[cfg(unix)]
@@ -91,10 +95,10 @@ pub(super) fn should_bridge_clipboard_image_paste(
 #[cfg(windows)]
 pub(super) fn should_bridge_clipboard_image_events(
     events: &[ClientInputEvent],
-    is_remote_client: bool,
+    image_bridge_active: bool,
     remote_image_paste_key: Option<(crossterm::event::KeyCode, crossterm::event::KeyModifiers)>,
 ) -> bool {
-    if !is_remote_client {
+    if !image_bridge_active {
         return false;
     }
     if matches!(events, [ClientInputEvent::Paste { text }] if text.is_empty()) {
@@ -117,6 +121,45 @@ pub(super) fn should_bridge_clipboard_image_events(
                         )
             )
     )
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use crate::protocol::{ClientKeyCode, ClientKeyKind, ClientKeySource};
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    fn ctrl_v() -> ClientInputEvent {
+        ClientInputEvent::Key {
+            code: ClientKeyCode::Char('v'),
+            modifiers: KeyModifiers::CONTROL.bits(),
+            kind: ClientKeyKind::Press,
+            repeat_count: 1,
+            generated_text: None,
+            source: ClientKeySource::Synthesized,
+        }
+    }
+
+    #[test]
+    fn configured_image_key_is_only_consumed_when_image_bridge_is_active() {
+        let events = [ctrl_v()];
+        let binding = Some((KeyCode::Char('v'), KeyModifiers::CONTROL));
+
+        assert!(should_bridge_clipboard_image_events(&events, true, binding));
+        assert!(!should_bridge_clipboard_image_events(
+            &events, false, binding
+        ));
+    }
+
+    #[test]
+    fn empty_terminal_paste_is_an_image_trigger_only_when_bridge_is_active() {
+        let events = [ClientInputEvent::Paste {
+            text: String::new(),
+        }];
+
+        assert!(should_bridge_clipboard_image_events(&events, true, None));
+        assert!(!should_bridge_clipboard_image_events(&events, false, None));
+    }
 }
 
 #[cfg(unix)]

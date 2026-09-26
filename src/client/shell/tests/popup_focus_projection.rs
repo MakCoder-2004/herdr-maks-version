@@ -926,6 +926,29 @@ fn edit_scrollback_binding_targets_the_focused_endpoint_pane() {
 }
 
 #[test]
+fn edit_staged_paste_binding_targets_the_focused_endpoint_pane() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let mut input = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::EditStagedPaste),
+        &mut input,
+    );
+
+    assert!(input.requests.is_empty());
+    assert!(matches!(
+        &input.actions[..],
+        [ClientShellAction::Endpoint { request, .. }]
+            if matches!(
+                &request.method,
+                crate::api::schema::Method::PaneEditStagedPaste(target)
+                    if target.pane_id == "pane_1"
+            )
+    ));
+}
+
+#[test]
 fn sidebar_scrollbars_use_proportional_shared_geometry_and_drag() {
     let mut projected = snapshot();
     for index in 2..=10 {

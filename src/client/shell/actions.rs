@@ -1098,6 +1098,9 @@ impl ClientShellState {
             KeybindAction::EditScrollback => Some(Method::PaneEditScrollback(PaneTarget {
                 pane_id: focused_pane?,
             })),
+            KeybindAction::EditStagedPaste => Some(Method::PaneEditStagedPaste(PaneTarget {
+                pane_id: focused_pane?,
+            })),
             KeybindAction::ResizePaneLeft
             | KeybindAction::ResizePaneDown
             | KeybindAction::ResizePaneUp

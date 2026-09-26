@@ -1006,6 +1006,15 @@ impl ClientShellState {
             .map(crate::protocol::ClientClipboardImageTarget::Pane)
     }
 
+    pub(crate) fn focused_pane_has_agent(&self) -> bool {
+        let Some(pane_id) = self.focused_pane_id() else {
+            return false;
+        };
+        self.snapshot
+            .as_deref()
+            .is_some_and(|snapshot| snapshot.agents.iter().any(|agent| agent.pane_id == pane_id))
+    }
+
     fn popup_input_target(&self) -> Option<ClientInputTarget> {
         self.popup_terminal_id
             .as_ref()

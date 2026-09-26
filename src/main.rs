@@ -160,7 +160,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # previous_agent = ""     # optional, unset by default
 # next_agent = ""         # optional, unset by default
 # focus_agent = ""        # optional indexed binding, e.g. "prefix+alt+1..9"
-# remote_image_paste = "ctrl+v" # only active in herdr --remote; empty disables raw-key image paste
+# remote_image_paste = "ctrl+v" # clipboard-image key for local Windows agent panes
+# and herdr --remote; empty disables key-triggered image paste
 # new_tab = "prefix+c"
 # rename_tab = "prefix+shift+t"
 # previous_tab = "prefix+p"
@@ -172,6 +173,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # close_tab = "prefix+shift+x"
 # rename_pane = "prefix+shift+p"
 # edit_scrollback = "prefix+e"
+# edit_staged_paste = "prefix+shift+e"
 # clear_pane = ""                  # unbound; e.g. "prefix+ctrl+k"
 # focus_pane_left = "prefix+h"
 # focus_pane_down = "prefix+j"

@@ -1,5 +1,20 @@
 use std::path::Path;
 
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn create_private_state_directory(path: &Path) -> std::io::Result<()> {
+    super::fallback::create_remote_private_dir(path)
+}
+
+#[cfg(unix)]
+pub(crate) fn create_private_state_directory(path: &Path) -> std::io::Result<()> {
+    super::unix_common::create_remote_private_dir(path)
+}
+
+#[cfg(windows)]
+pub(crate) fn create_private_state_directory(path: &Path) -> std::io::Result<()> {
+    super::windows::create_remote_private_dir(path)
+}
+
 #[cfg(not(windows))]
 pub(crate) fn create_private_state_file(path: &Path) -> std::io::Result<std::fs::File> {
     super::create_remote_ssh_config_file(path)

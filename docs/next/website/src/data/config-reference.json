@@ -698,6 +698,12 @@
           "description": "Open the focused pane scrollback in $EDITOR."
         },
         {
+          "key": "keys.edit_staged_paste",
+          "type": "keybinding",
+          "default": "\"prefix+shift+e\"",
+          "description": "Open the focused pane's latest staged large paste in $EDITOR."
+        },
+        {
           "key": "keys.clear_pane",
           "type": "keybinding",
           "default": "unset",

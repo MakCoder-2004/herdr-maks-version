@@ -61,6 +61,7 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::PaneScroll(_)
             | Method::PaneClear(_)
             | Method::PaneEditScrollback(_)
+            | Method::PaneEditStagedPaste(_)
             | Method::PaneFocus(_)
             | Method::PaneInputSet(_)
             | Method::PaneRename(_)

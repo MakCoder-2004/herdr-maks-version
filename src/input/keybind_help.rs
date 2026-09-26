@@ -160,6 +160,10 @@ pub(crate) fn keybind_help_groups(
                 entry(binding_label(&keybinds.close_pane), "close pane"),
                 entry(binding_label(&keybinds.rename_pane), "rename pane"),
                 entry(binding_label(&keybinds.edit_scrollback), "edit scrollback"),
+                entry(
+                    binding_label(&keybinds.edit_staged_paste),
+                    "edit latest large paste",
+                ),
                 entry(binding_label(&keybinds.clear_pane), "clear pane"),
                 entry(binding_label(&keybinds.copy_mode), "copy mode"),
                 entry(binding_label(&keybinds.zoom), "zoom pane"),

@@ -793,10 +793,15 @@ async fn run_client_loop(
             ClientLoopEvent::EndpointCatalog(reload) => pending_catalog = Some(reload),
             #[cfg(unix)]
             ClientLoopEvent::StdinInput(data) => {
+                let focused_pane_has_agent = state
+                    .shell
+                    .as_ref()
+                    .is_some_and(shell::ClientShellState::focused_pane_has_agent);
                 let image_bridge_active = endpoint_accepts_local_images(
                     is_remote_client,
                     write_stream.active_id(),
                     write_stream.active_surface_available(),
+                    focused_pane_has_agent,
                 );
                 if state.shell.is_some() {
                     if will_query_host_cell_size {
@@ -1095,10 +1100,15 @@ async fn run_client_loop(
             }
             #[cfg(windows)]
             ClientLoopEvent::StdinEvents(events) => {
+                let focused_pane_has_agent = state
+                    .shell
+                    .as_ref()
+                    .is_some_and(shell::ClientShellState::focused_pane_has_agent);
                 let image_bridge_active = endpoint_accepts_local_images(
                     is_remote_client,
                     write_stream.active_id(),
                     write_stream.active_surface_available(),
+                    focused_pane_has_agent,
                 );
                 if state.shell.is_some() {
                     if events.iter().any(|event| {

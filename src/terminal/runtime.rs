@@ -566,6 +566,14 @@ impl TerminalRuntime {
         self.0.cwd()
     }
 
+    pub(crate) fn remember_staged_paste(&self, path: std::path::PathBuf) {
+        self.0.remember_staged_paste(path);
+    }
+
+    pub(crate) fn last_staged_paste_path(&self) -> Option<std::path::PathBuf> {
+        self.0.last_staged_paste_path()
+    }
+
     pub fn cwd_for_persistence(&self) -> Option<std::path::PathBuf> {
         self.0.cwd_for_persistence()
     }

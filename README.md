@@ -1,4 +1,4 @@
-# herdr
+# Herdr (Mak's version)
 
 
 <p align="center">
@@ -28,6 +28,27 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 
 **the runtime your coding agents live on.**
 
+This public fork is based on [upstream Herdr](https://github.com/herdrdev/herdr) and includes a
+Windows-focused paste workflow:
+
+- In detected local agent panes, `Ctrl+V` pastes a clipboard image path without submitting the prompt.
+- Large text pastes are saved under `.herdr-pastes` and represented by a short reference in the prompt.
+- `Ctrl+B`, then `Shift+E` opens the latest staged paste for the focused pane in your editor. Save and
+  close it before pressing Enter to submit.
+- `Ctrl+B`, then `P` opens Herdr Plus Projects when the `cloudmanic.herdr-plus` plugin and its
+  `prefix+p` keybinding are installed.
+
+Herdr Plus is a separate plugin. Install it with `herdr plugin install cloudmanic/herdr-plus`, then
+bind its Windows Projects action in `config.toml`:
+
+```toml
+[[keys.command]]
+key = "prefix+p"
+type = "plugin_action"
+command = "cloudmanic.herdr-plus.projects-windows"
+description = "Open Herdr Plus projects"
+```
+
 - **detach without stopping work** — herdr keeps terminals running in a background server when you close the client or lose your SSH connection. after a server or machine restart, herdr restores the saved layout and can resume supported agent sessions; the original processes do not survive. [session state →](https://herdr.dev/docs/session-state/)
 - **several machines, one window** — keep local work and saved ssh machines together, with a combined agent list and independent reconnects. [remote machines →](https://herdr.dev/docs/connecting-machines/)
 - **never hunt for the stuck one** — every pane is marked working, blocked, or idle. when an agent stops and needs an answer, herdr says so.
@@ -39,18 +60,20 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 
 ---
 
-## install
+## build and run this version
 
-```bash
-curl -fsSL https://herdr.dev/install.sh | sh
+```powershell
+cargo build --release --locked
+.\target\release\herdr.exe
 ```
 
-or `brew install herdr` · `mise use -g herdr` · windows: `powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"` · [endpoint-protected Windows](https://herdr.dev/docs/windows-beta/) · [binaries](https://github.com/herdrdev/herdr/releases)
+The same Cargo build works on Linux and macOS; run `./target/release/herdr` there. The upstream
+installer and release downloads install upstream Herdr, not this customized build.
 
-then start it where the work lives:
+Start this build where the work lives:
 
 ```bash
-herdr
+./target/release/herdr
 ```
 
 run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches. [quick start →](https://herdr.dev/docs/quick-start/)

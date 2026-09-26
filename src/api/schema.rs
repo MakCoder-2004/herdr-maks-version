@@ -171,6 +171,8 @@ pub enum Method {
     PaneClear(PaneTarget),
     #[serde(rename = "pane.edit_scrollback")]
     PaneEditScrollback(PaneTarget),
+    #[serde(rename = "pane.edit_staged_paste")]
+    PaneEditStagedPaste(PaneTarget),
     #[serde(rename = "pane.selection.read")]
     PaneSelectionRead(PaneSelectionReadParams),
     #[serde(rename = "pane.copy_motion")]

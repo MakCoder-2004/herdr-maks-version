@@ -1129,6 +1129,9 @@ impl App {
             Method::PaneEditScrollback(target) => {
                 return self.handle_pane_edit_scrollback(request.id, target);
             }
+            Method::PaneEditStagedPaste(target) => {
+                return self.handle_pane_edit_staged_paste(request.id, target);
+            }
             Method::PaneSelectionRead(params) => {
                 return self.handle_pane_selection_read(request.id, params);
             }

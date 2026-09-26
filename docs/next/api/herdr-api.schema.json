@@ -5672,6 +5672,22 @@
         {
           "properties": {
             "method": {
+              "const": "pane.edit_staged_paste",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneTarget"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "pane.selection.read",
               "type": "string"
             },

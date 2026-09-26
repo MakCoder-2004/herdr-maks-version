@@ -1,6 +1,53 @@
 use super::*;
 
 #[test]
+fn focused_pane_has_agent_only_when_the_focused_pane_is_in_agent_snapshot() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    let mut agent_snapshot = snapshot();
+    agent_snapshot.agents.push(ClientShellAgent {
+        pane_id: "pane_1".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: None,
+        display_agent: None,
+        agent: Some("opencode".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Working,
+        state_change_seq: 0,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: true,
+    });
+    state.set_snapshot(Box::new(agent_snapshot));
+
+    assert!(state.focused_pane_has_agent());
+
+    let mut non_agent_snapshot = snapshot();
+    non_agent_snapshot.focused_pane_id = Some("pane_2".into());
+    non_agent_snapshot.agents.push(ClientShellAgent {
+        pane_id: "pane_1".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: None,
+        display_agent: None,
+        agent: Some("opencode".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Working,
+        state_change_seq: 0,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: false,
+    });
+    state.set_snapshot(Box::new(non_agent_snapshot));
+
+    assert!(!state.focused_pane_has_agent());
+}
+
+#[test]
 fn host_appearance_prefers_explicit_reports_over_background_inference() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.config.theme_runtime.auto_switch = true;

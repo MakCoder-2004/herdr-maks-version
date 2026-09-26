@@ -204,20 +204,35 @@ pub(super) fn apply_client_pane_input_events(
     runtime: &crate::terminal::TerminalRuntime,
     events: &[ClientPaneInputEvent],
 ) -> Result<(), String> {
-    apply_client_terminal_input_events(runtime, events, true)
+    apply_client_terminal_input_events(runtime, events, true, false)
+}
+
+pub(super) fn apply_client_agent_pane_input_events(
+    runtime: &crate::terminal::TerminalRuntime,
+    events: &[ClientPaneInputEvent],
+) -> Result<(), String> {
+    apply_client_terminal_input_events(runtime, events, true, true)
 }
 
 pub(super) fn apply_client_popup_input_events(
     runtime: &crate::terminal::TerminalRuntime,
     events: &[ClientPaneInputEvent],
 ) -> Result<(), String> {
-    apply_client_terminal_input_events(runtime, events, false)
+    apply_client_terminal_input_events(runtime, events, false, false)
+}
+
+pub(super) fn apply_client_agent_popup_input_events(
+    runtime: &crate::terminal::TerminalRuntime,
+    events: &[ClientPaneInputEvent],
+) -> Result<(), String> {
+    apply_client_terminal_input_events(runtime, events, false, true)
 }
 
 fn apply_client_terminal_input_events(
     runtime: &crate::terminal::TerminalRuntime,
     events: &[ClientPaneInputEvent],
     host_page_keys: bool,
+    compact_large_pastes: bool,
 ) -> Result<(), String> {
     for event in events {
         if let ClientPaneInputEvent::Mouse {
@@ -326,6 +341,17 @@ fn apply_client_terminal_input_events(
             }
             crate::raw_input::RawInputEvent::Paste(text) => {
                 runtime.scroll_reset();
+                let (text, staged_path) = if compact_large_pastes {
+                    crate::server::clipboard_text::compact_large_paste(
+                        text,
+                        runtime.cwd().as_deref(),
+                    )
+                } else {
+                    (text, None)
+                };
+                if let Some(path) = staged_path {
+                    runtime.remember_staged_paste(path);
+                }
                 runtime
                     .try_send_paste(text)
                     .map_err(|err| format!("targeted pane paste failed: {err}"))?;
