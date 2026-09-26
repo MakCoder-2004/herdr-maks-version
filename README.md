@@ -70,6 +70,11 @@ cargo build --release --locked
 The same Cargo build works on Linux and macOS; run `./target/release/herdr` there. The upstream
 installer and release downloads install upstream Herdr, not this customized build.
 
+Pull requests and pushes to `master` run checks on Linux, macOS, and Windows. In GitHub Actions,
+manually run **CI** to select one platform or all platforms and optionally skip the Windows ConPTY
+package test. **Distribution contract** can be run without upstream version tags; enable its tag
+validation input only when those tags are present.
+
 Start this build where the work lives:
 
 ```bash

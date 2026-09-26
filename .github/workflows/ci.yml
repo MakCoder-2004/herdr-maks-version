@@ -4,7 +4,24 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
-    branches: [master, windows]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform checks to run manually
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+      windows_conpty_package:
+        description: Run the Windows ConPTY package test when Windows is selected
+        type: boolean
+        required: true
+        default: true
 
 permissions:
   contents: read
@@ -35,7 +52,7 @@ jobs:
           persist-credentials: false
 
       - name: Validate commit subjects
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         run: python3 scripts/conventional_commits.py --range "${{ github.event.before }}..${{ github.event.after }}"
 
       - name: Validate PR title
@@ -47,17 +64,9 @@ jobs:
   check:
     name: check (${{ matrix.os }})
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            kind: unix
-            nextest_filter: all()
-          - os: macos-latest
-            kind: unix
-            nextest_filter: not binary(live_handoff)
-          - os: windows-latest
-            kind: windows
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.platform != 'all' && format('["{0}"]', inputs.platform) || '["ubuntu-latest","macos-latest","windows-latest"]') }}
+      fail-fast: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -67,14 +76,14 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        if: matrix.kind == 'unix'
+        if: matrix.os != 'windows-latest'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
           components: rustfmt,clippy
 
       - name: Install Rust
-        if: matrix.kind == 'windows'
+        if: matrix.os == 'windows-latest'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
@@ -98,7 +107,7 @@ jobs:
 
       # Zig's C-header cache keys include the compiler installation path.
       - name: Stabilize Zig installation path on Unix
-        if: matrix.kind == 'unix'
+        if: matrix.os != 'windows-latest'
         run: |
           stable_zig="$RUNNER_TEMP/herdr-zig-0.16.0"
           mv "$(dirname "$(command -v zig)")" "$stable_zig"
@@ -106,7 +115,7 @@ jobs:
           echo "ZIG=$stable_zig/zig" >> "$GITHUB_ENV"
 
       - name: Stabilize Zig installation path on Windows
-        if: matrix.kind == 'windows'
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $source = Split-Path (Get-Command zig).Source
@@ -132,7 +141,7 @@ jobs:
       # Save before rust-cache's post-step removes incremental state. Cargo still
       # rebuilds workspace targets; only rustc's validated query state is retained.
       - name: Restore Windows incremental compiler state
-        if: matrix.kind == 'windows'
+        if: matrix.os == 'windows-latest'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/debug/incremental
@@ -146,11 +155,11 @@ jobs:
 
       - name: Run Linux tests
         if: runner.os == 'Linux'
-        run: CARGO_INCREMENTAL=1 just ci-tests '${{ matrix.nextest_filter }}'
+        run: CARGO_INCREMENTAL=1 just ci-tests 'all()'
 
       - name: Run macOS checks
         if: runner.os == 'macOS'
-        run: just ci '${{ matrix.nextest_filter }}'
+        run: just ci 'not binary(live_handoff)'
 
       - name: Check scalar libghostty with runtime safety
         if: runner.os == 'Linux'
@@ -160,14 +169,14 @@ jobs:
         run: CARGO_INCREMENTAL=1 just test-one ghostty
 
       - name: Run Windows checks
-        if: matrix.kind == 'windows'
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $env:CARGO_INCREMENTAL = "1"
           just check
 
       - name: Smoke ConPTY pane
-        if: matrix.kind == 'windows'
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -176,6 +185,7 @@ jobs:
 
   windows-conpty-package:
     name: Windows ConPTY package
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.windows_conpty_package && (inputs.platform == 'all' || inputs.platform == 'windows-latest')) }}
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
