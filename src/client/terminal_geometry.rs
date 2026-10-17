@@ -193,7 +193,14 @@ pub(super) fn query_host_terminal_theme() {
 }
 
 pub(super) fn should_query_host_terminal_theme() -> bool {
-    !cfg!(windows)
+    #[cfg(windows)]
+    {
+        super::windows_vti_input_backend_enabled()
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
 }
 
 pub(super) fn write_host_terminal_theme_query(mut writer: impl io::Write) -> io::Result<()> {

@@ -103,6 +103,16 @@ impl RawInputFramer {
         starts_with_incomplete_default_mouse_sequence(&self.byte_framer.buffer)
     }
 
+    #[cfg(windows)]
+    pub(crate) fn host_color_query_sent(&mut self) {
+        self.byte_framer.host_color_query_sent();
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn enable_host_color_scheme_change_tracking(&mut self) {
+        self.byte_framer.enable_host_color_scheme_change_tracking();
+    }
+
     pub(crate) fn flush_timeout(&mut self) -> Vec<RawInputEvent> {
         Self::events_from_chunks(self.byte_framer.flush_timeout())
     }
@@ -203,7 +213,7 @@ impl RawInputByteFramer {
             || self.host_appearance_reply_awaited
     }
 
-    #[cfg(any(unix, test))]
+    #[cfg(any(unix, windows, test))]
     pub(crate) fn enable_host_color_scheme_change_tracking(&mut self) {
         self.host_color_scheme_change_tracking = true;
     }

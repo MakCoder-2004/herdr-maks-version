@@ -50,13 +50,12 @@ pub fn stdin_reader_loop(
     #[cfg(windows)]
     {
         let _ = (
-            host_color_query_sent,
             host_cell_size_query_sent,
             host_mouse_capture_active,
             host_sgr_pixels_active,
         );
         let _ = (host_escape_disambiguation_active, initial_host_input);
-        windows_stdin_reader_loop(event_tx, should_quit);
+        windows_stdin_reader_loop(event_tx, should_quit, host_color_query_sent);
     }
 
     #[cfg(unix)]
@@ -388,6 +387,7 @@ fn idle_flush_timeout_ms(
 fn windows_stdin_reader_loop(
     event_tx: mpsc::Sender<ClientLoopEvent>,
     should_quit: &Arc<AtomicBool>,
+    host_color_query_sent: bool,
 ) {
     if !super::windows_vti_input_backend_enabled() {
         windows_vti::trace_input_transport("reader=crossterm");
@@ -396,7 +396,12 @@ fn windows_stdin_reader_loop(
         match windows_vti::console_input_handle() {
             Ok(handle) => {
                 windows_vti::trace_input_transport("reader=windows-console");
-                windows_vti::raw_console_reader_loop(handle, event_tx, should_quit);
+                windows_vti::raw_console_reader_loop(
+                    handle,
+                    event_tx,
+                    should_quit,
+                    host_color_query_sent,
+                );
             }
             _ => {
                 windows_vti::trace_input_transport("reader=crossterm-fallback");

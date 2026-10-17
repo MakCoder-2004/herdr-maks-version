@@ -1179,6 +1179,32 @@ async fn run_client_loop(
                 }
                 // Direct terminal attach is Unix-only; every Windows client uses ClientShell.
             }
+            #[cfg(windows)]
+            ClientLoopEvent::StdinHostTheme(events) => {
+                if state.shell.is_some() {
+                    let (outcome, frame) = {
+                        let shell = state.shell.as_mut().expect("checked shell mode");
+                        let outcome = shell.handle_raw_events(events);
+                        let frame = outcome
+                            .repaint
+                            .then(|| shell.compose(state.reported_size.0, state.reported_size.1))
+                            .flatten();
+                        (outcome, frame)
+                    };
+                    if finish_client_shell_input(
+                        &mut state,
+                        outcome,
+                        frame,
+                        &mut write_stream,
+                        &mut pending_activation,
+                        &mut endpoint_commands,
+                        &mut prefix_input_source,
+                        &mut scheduled_activation,
+                    )? {
+                        return Ok(());
+                    }
+                }
+            }
             ClientLoopEvent::TerminalUnavailable(err) => {
                 info!(err = %err, "client terminal unavailable; detaching");
                 let _ = write_to_server(&mut write_stream, &ClientMessage::Detach);

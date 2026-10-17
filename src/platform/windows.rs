@@ -801,7 +801,7 @@ pub(crate) fn should_draw_host_cursor_by_default() -> bool {
 }
 
 pub(crate) fn should_query_host_terminal_palette() -> bool {
-    false
+    true
 }
 
 /// The machine's node name, as shown by tmux's `#h`.

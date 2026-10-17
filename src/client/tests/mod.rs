@@ -450,8 +450,11 @@ fn color_scheme_change_event_requests_host_theme_query() {
 }
 
 #[test]
-fn host_terminal_theme_query_is_disabled_on_windows() {
-    assert_eq!(should_query_host_terminal_theme(), !cfg!(windows));
+fn host_terminal_theme_query_uses_the_raw_windows_input_backend() {
+    assert_eq!(
+        should_query_host_terminal_theme(),
+        !cfg!(windows) || windows_vti_input_backend_enabled()
+    );
 }
 
 #[test]

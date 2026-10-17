@@ -20,9 +20,14 @@ pub(super) fn raw_console_reader_loop(
     handle: windows_sys::Win32::Foundation::HANDLE,
     event_tx: mpsc::Sender<ClientLoopEvent>,
     should_quit: &Arc<AtomicBool>,
+    host_color_query_sent: bool,
 ) {
     let mut mapper = WindowsInputMapper::default();
     let mut pump = WindowsInputPump::default();
+    if host_color_query_sent {
+        pump.framer.host_color_query_sent();
+        pump.framer.enable_host_color_scheme_change_tracking();
+    }
     let mut handoff = WindowsInputHandoff::default();
 
     while !should_quit.load(Ordering::Acquire) {
@@ -38,7 +43,7 @@ pub(super) fn raw_console_reader_loop(
                     &mut handoff,
                     trace.as_mut(),
                 );
-                push_platform_input_events(pump.idle(), &mut handoff, trace.as_mut());
+                push_platform_input_events(pump.idle(), &mut pump, &mut handoff, trace.as_mut());
             }
             WindowsInputItems::Closed => return,
         }
@@ -79,23 +84,28 @@ fn process_platform_input_items(
     mut trace: Option<&mut WindowsInputTraceBatch>,
 ) {
     for item in items {
-        push_platform_input_events(pump.process(item), handoff, trace.as_deref_mut());
+        let events = pump.process(item);
+        push_platform_input_events(events, pump, handoff, trace.as_deref_mut());
     }
 }
 
 #[cfg(windows)]
 fn push_platform_input_events(
     events: Vec<crate::protocol::ClientInputEvent>,
+    pump: &mut WindowsInputPump,
     handoff: &mut WindowsInputHandoff,
     trace: Option<&mut WindowsInputTraceBatch>,
 ) {
-    if events.is_empty() {
-        return;
+    if !events.is_empty() {
+        if let Some(trace) = trace {
+            trace.mapped_event_groups.push(events.clone());
+        }
+        handoff.push(events);
     }
-    if let Some(trace) = trace {
-        trace.mapped_event_groups.push(events.clone());
+    let host_theme_events = pump.take_host_theme_events();
+    if !host_theme_events.is_empty() {
+        handoff.push_host_theme(host_theme_events);
     }
-    handoff.push(events);
 }
 
 #[cfg(windows)]
@@ -129,9 +139,16 @@ struct WindowsInputTraceBatch {
 }
 
 #[cfg(windows)]
+#[derive(Debug)]
+enum WindowsInputBatch {
+    Input(Vec<crate::protocol::ClientInputEvent>),
+    HostTheme(Vec<crate::raw_input::RawInputEvent>),
+}
+
+#[cfg(windows)]
 #[derive(Default)]
 struct WindowsInputHandoff {
-    pending: VecDeque<Vec<crate::protocol::ClientInputEvent>>,
+    pending: VecDeque<WindowsInputBatch>,
     backpressured: bool,
 }
 
@@ -141,10 +158,20 @@ impl WindowsInputHandoff {
         if events.is_empty() {
             return;
         }
+        self.push_batch(WindowsInputBatch::Input(events));
+    }
+
+    fn push_host_theme(&mut self, events: Vec<crate::raw_input::RawInputEvent>) {
+        if !events.is_empty() {
+            self.push_batch(WindowsInputBatch::HostTheme(events));
+        }
+    }
+
+    fn push_batch(&mut self, batch: WindowsInputBatch) {
         if self.backpressured {
-            self.push_backpressured(events);
+            self.push_backpressured(batch);
         } else {
-            self.pending.push_back(events);
+            self.pending.push_back(batch);
         }
     }
 
@@ -158,17 +185,23 @@ impl WindowsInputHandoff {
             }
             match event_tx.try_reserve() {
                 Ok(permit) => {
-                    let Some(events) = self.pending.pop_front() else {
+                    let Some(batch) = self.pending.pop_front() else {
                         continue;
                     };
-                    permit.send(ClientLoopEvent::StdinEvents(events));
+                    let event = match batch {
+                        WindowsInputBatch::Input(events) => ClientLoopEvent::StdinEvents(events),
+                        WindowsInputBatch::HostTheme(events) => {
+                            ClientLoopEvent::StdinHostTheme(events)
+                        }
+                    };
+                    permit.send(event);
                 }
                 Err(mpsc::error::TrySendError::Full(_)) => {
                     if !self.backpressured {
                         self.backpressured = true;
                         let pending = std::mem::take(&mut self.pending);
-                        for events in pending {
-                            self.push_backpressured(events);
+                        for batch in pending {
+                            self.push_backpressured(batch);
                         }
                     }
                     return true;
@@ -178,16 +211,18 @@ impl WindowsInputHandoff {
         }
     }
 
-    fn push_backpressured(&mut self, events: Vec<crate::protocol::ClientInputEvent>) {
-        if let Some(previous) = self.pending.back_mut() {
-            if let ([previous_event], [next_event]) = (previous.as_slice(), events.as_slice()) {
+    fn push_backpressured(&mut self, batch: WindowsInputBatch) {
+        if let (Some(WindowsInputBatch::Input(previous)), WindowsInputBatch::Input(next)) =
+            (self.pending.back_mut(), &batch)
+        {
+            if let ([previous_event], [next_event]) = (previous.as_slice(), next.as_slice()) {
                 if windows_mouse_motion_can_replace(previous_event, next_event) {
-                    *previous = events;
+                    *previous = next.clone();
                     return;
                 }
             }
         }
-        self.pending.push_back(events);
+        self.pending.push_back(batch);
     }
 }
 
@@ -329,6 +364,7 @@ struct WindowsInputMapper {
 
 struct WindowsInputPump {
     framer: crate::raw_input::RawInputFramer,
+    pending_host_theme_events: Vec<crate::raw_input::RawInputEvent>,
     paste_from_win32_key_records: bool,
     pending_physical_escape: Option<(crate::protocol::ClientInputEvent, bool)>,
     default_mouse_candidate: DefaultMouseCandidate,
@@ -346,6 +382,7 @@ impl Default for WindowsInputPump {
     fn default() -> Self {
         Self {
             framer: crate::raw_input::RawInputFramer::for_host_input(),
+            pending_host_theme_events: Vec::new(),
             paste_from_win32_key_records: false,
             pending_physical_escape: None,
             default_mouse_candidate: DefaultMouseCandidate::default(),
@@ -513,10 +550,26 @@ impl WindowsInputPump {
         events
     }
 
+    fn take_host_theme_events(&mut self) -> Vec<crate::raw_input::RawInputEvent> {
+        std::mem::take(&mut self.pending_host_theme_events)
+    }
+
     fn process_raw_events(
         &mut self,
-        mut events: Vec<crate::raw_input::RawInputEvent>,
+        events: Vec<crate::raw_input::RawInputEvent>,
     ) -> Vec<crate::protocol::ClientInputEvent> {
+        let mut input_events = Vec::with_capacity(events.len());
+        for event in events {
+            match event {
+                event @ (crate::raw_input::RawInputEvent::HostDefaultColor { .. }
+                | crate::raw_input::RawInputEvent::HostPaletteColors { .. }
+                | crate::raw_input::RawInputEvent::HostColorSchemeChanged(_)) => {
+                    self.pending_host_theme_events.push(event);
+                }
+                event => input_events.push(event),
+            }
+        }
+        let mut events = input_events;
         for event in &mut events {
             if let crate::raw_input::RawInputEvent::Paste(text) = event {
                 decode_windows_terminal_paste_enters(text);
@@ -1623,6 +1676,53 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_input_pump_routes_host_theme_replies_separately_from_keystrokes() {
+        let mut pump = WindowsInputPump::default();
+        pump.framer.host_color_query_sent();
+        pump.framer.enable_host_color_scheme_change_tracking();
+
+        let input_events = pump.process(PlatformInputItem::Bytes(
+            b"\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\".to_vec(),
+        ));
+
+        assert!(input_events.is_empty());
+        let events = pump.take_host_theme_events();
+        let [crate::raw_input::RawInputEvent::HostDefaultColor { kind, color }] = events.as_slice()
+        else {
+            panic!("expected one forwarded host foreground color report: {events:?}");
+        };
+        assert_eq!(*kind, crate::terminal_theme::DefaultColorKind::Foreground);
+        assert_eq!(
+            *color,
+            crate::terminal_theme::RgbColor {
+                r: 0xaa,
+                g: 0xbb,
+                b: 0xcc,
+            }
+        );
+
+        let palette_input = pump.process(PlatformInputItem::Bytes(
+            b"\x1b]4;2;rgb:1111/2222/3333\x1b\\".to_vec(),
+        ));
+        assert!(palette_input.is_empty());
+        assert!(matches!(
+            pump.take_host_theme_events().as_slice(),
+            [crate::raw_input::RawInputEvent::HostPaletteColors { colors }]
+                if colors == &vec![(2, crate::terminal_theme::RgbColor { r: 0x11, g: 0x22, b: 0x33 })]
+        ));
+
+        let scheme_input = pump.process(PlatformInputItem::Bytes(b"\x1b[?997;1n".to_vec()));
+        assert!(scheme_input.is_empty());
+        assert!(matches!(
+            pump.take_host_theme_events().as_slice(),
+            [crate::raw_input::RawInputEvent::HostColorSchemeChanged(
+                crate::terminal_theme::HostAppearance::Dark
+            )]
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_input_trace_preserves_mapped_event_groups() {
         let groups = vec![
             vec![crate::protocol::ClientInputEvent::FocusGained],
@@ -1633,14 +1733,18 @@ mod tests {
         ];
         let mut trace = WindowsInputTraceBatch::default();
         let mut handoff = WindowsInputHandoff::default();
+        let mut pump = WindowsInputPump::default();
 
         for events in &groups {
-            push_platform_input_events(events.clone(), &mut handoff, Some(&mut trace));
+            push_platform_input_events(events.clone(), &mut pump, &mut handoff, Some(&mut trace));
         }
-        push_platform_input_events(Vec::new(), &mut handoff, Some(&mut trace));
+        push_platform_input_events(Vec::new(), &mut pump, &mut handoff, Some(&mut trace));
 
         assert_eq!(trace.mapped_event_groups, groups);
-        assert_eq!(handoff.pending, VecDeque::from(groups));
+        assert_eq!(handoff.pending.len(), groups.len());
+        for (batch, events) in handoff.pending.iter().zip(groups) {
+            assert!(matches!(batch, WindowsInputBatch::Input(input) if *input == events));
+        }
     }
 
     #[cfg(windows)]
@@ -1704,14 +1808,12 @@ mod tests {
             shortcut_release,
             text,
         ];
-        assert_eq!(
-            handoff.pending,
-            expected
-                .iter()
-                .cloned()
-                .map(|event| vec![event])
-                .collect::<VecDeque<_>>()
-        );
+        assert_eq!(handoff.pending.len(), expected.len());
+        for (batch, event) in handoff.pending.iter().zip(&expected) {
+            assert!(
+                matches!(batch, WindowsInputBatch::Input(input) if input == &vec![event.clone()])
+            );
+        }
         assert!(matches!(event_rx.try_recv(), Ok(ClientLoopEvent::Timer)));
 
         let mut delivered = Vec::new();
