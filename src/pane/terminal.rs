@@ -3257,7 +3257,7 @@ fn ghostty_cell_style(
         .ok()
         .flatten()
         .or(basic.style.bg_color)
-        .map(|color| ghostty_cell_color(color, palette_overrides))
+        .map(|color| ghostty_cell_background_color(color, palette_overrides))
         .or_else(|| cells.bg_color().ok().flatten().map(ghostty_color))
         .or(default_bg);
     if basic.style.invisible {
@@ -3557,6 +3557,24 @@ fn ghostty_cell_color(
     }
 }
 
+fn ghostty_cell_background_color(
+    color: crate::ghostty::CellColor,
+    palette_overrides: Option<&PaletteOverrides>,
+) -> Color {
+    // ANSI green backgrounds are muddy in Herdr's embedded terminal; use a
+    // deeper emerald while leaving foreground greens and app-defined palettes intact.
+    match color {
+        crate::ghostty::CellColor::Palette(2)
+            if palette_overrides
+                .and_then(|overrides| overrides.get(2))
+                .is_none() =>
+        {
+            Color::Rgb(29, 54, 41)
+        }
+        _ => ghostty_cell_color(color, palette_overrides),
+    }
+}
+
 fn ghostty_color(color: crate::ghostty::RgbColor) -> Color {
     Color::Rgb(color.r, color.g, color.b)
 }
@@ -3685,6 +3703,28 @@ mod tests {
         assert_eq!(
             ghostty_cell_color(crate::ghostty::CellColor::Palette(18), None),
             Color::Indexed(18)
+        );
+    }
+
+    #[test]
+    fn ansi_green_background_uses_emerald_but_preserves_custom_palette() {
+        let default = [rgb(1, 2, 3); 256];
+        assert_eq!(
+            ghostty_cell_background_color(crate::ghostty::CellColor::Palette(2), None),
+            Color::Rgb(29, 54, 41)
+        );
+
+        let mut active = default;
+        active[2] = rgb(160, 210, 150);
+        let overrides = PaletteOverrides::new(&active, &default).expect("index 2 differs");
+        assert_eq!(
+            ghostty_cell_background_color(crate::ghostty::CellColor::Palette(2), Some(&overrides)),
+            Color::Rgb(160, 210, 150)
+        );
+        assert_eq!(
+            ghostty_cell_color(crate::ghostty::CellColor::Palette(2), None),
+            Color::Indexed(2),
+            "ANSI green foreground remains unchanged"
         );
     }
 
