@@ -391,7 +391,7 @@ fn windows_stdin_reader_loop(
 ) {
     if !super::windows_vti_input_backend_enabled() {
         windows_vti::trace_input_transport("reader=crossterm");
-        windows_crossterm_reader_loop(event_tx, should_quit);
+        windows_crossterm_reader_loop(event_tx, should_quit, host_color_query_sent);
     } else {
         match windows_vti::console_input_handle() {
             Ok(handle) => {
@@ -405,7 +405,7 @@ fn windows_stdin_reader_loop(
             }
             _ => {
                 windows_vti::trace_input_transport("reader=crossterm-fallback");
-                windows_crossterm_reader_loop(event_tx, should_quit);
+                windows_crossterm_reader_loop(event_tx, should_quit, host_color_query_sent);
             }
         }
     }
@@ -415,8 +415,13 @@ fn windows_stdin_reader_loop(
 fn windows_crossterm_reader_loop(
     event_tx: mpsc::Sender<ClientLoopEvent>,
     should_quit: &Arc<AtomicBool>,
+    host_color_query_sent: bool,
 ) {
     let mut framer = crate::raw_input::RawInputFramer::for_host_input();
+    if host_color_query_sent {
+        framer.host_color_query_sent();
+        framer.enable_host_color_scheme_change_tracking();
+    }
 
     while !should_quit.load(Ordering::Acquire) {
         match crossterm::event::poll(Duration::from_millis(10)) {

@@ -48,12 +48,15 @@ pub(super) fn raw_console_reader_loop(
             WindowsInputItems::Closed => return,
         }
         let handoff_open = handoff.try_flush(&event_tx);
-        if let Some(trace) = trace
-            .filter(|trace| !trace.raw_keys.is_empty() || !trace.mapped_event_groups.is_empty())
-        {
+        if let Some(trace) = trace.filter(|trace| {
+            !trace.raw_keys.is_empty()
+                || !trace.mapped_event_groups.is_empty()
+                || !trace.host_theme_events.is_empty()
+        }) {
             tracing::info!(
                 raw_keys = ?trace.raw_keys,
                 mapped_event_groups = ?trace.mapped_event_groups,
+                host_theme_events = ?trace.host_theme_events,
                 "windows input trace: input batch"
             );
         }
@@ -94,16 +97,21 @@ fn push_platform_input_events(
     events: Vec<crate::protocol::ClientInputEvent>,
     pump: &mut WindowsInputPump,
     handoff: &mut WindowsInputHandoff,
-    trace: Option<&mut WindowsInputTraceBatch>,
+    mut trace: Option<&mut WindowsInputTraceBatch>,
 ) {
     if !events.is_empty() {
-        if let Some(trace) = trace {
+        if let Some(trace) = trace.as_deref_mut() {
             trace.mapped_event_groups.push(events.clone());
         }
         handoff.push(events);
     }
     let host_theme_events = pump.take_host_theme_events();
     if !host_theme_events.is_empty() {
+        if let Some(trace) = trace {
+            trace
+                .host_theme_events
+                .extend(host_theme_events.iter().map(|event| format!("{event:?}")));
+        }
         handoff.push_host_theme(host_theme_events);
     }
 }
@@ -136,6 +144,7 @@ enum WindowsInputItems {
 struct WindowsInputTraceBatch {
     raw_keys: Vec<WindowsKeyRecord>,
     mapped_event_groups: Vec<Vec<crate::protocol::ClientInputEvent>>,
+    host_theme_events: Vec<String>,
 }
 
 #[cfg(windows)]
@@ -1718,6 +1727,43 @@ mod tests {
             [crate::raw_input::RawInputEvent::HostColorSchemeChanged(
                 crate::terminal_theme::HostAppearance::Dark
             )]
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_input_mapper_frames_host_color_osc_reply_bytes() {
+        let mut mapper = WindowsInputMapper::default();
+        let mut pump = WindowsInputPump::default();
+        pump.framer.host_color_query_sent();
+        pump.framer.enable_host_color_scheme_change_tracking();
+        let mut input_events = Vec::new();
+
+        for unit in "\x1b]11;rgb:1818/1818/2525\x1b\\".encode_utf16() {
+            let key = WindowsKeyRecord {
+                key_down: true,
+                repeat_count: 1,
+                virtual_key_code: 0,
+                virtual_scan_code: 0,
+                unicode: unit,
+                control_key_state: 0,
+            };
+            for item in mapper.translate(WindowsInputRecord::Key(key)) {
+                input_events.extend(pump.process(item));
+            }
+        }
+
+        assert!(input_events.is_empty());
+        assert!(matches!(
+            pump.take_host_theme_events().as_slice(),
+            [crate::raw_input::RawInputEvent::HostDefaultColor {
+                kind: crate::terminal_theme::DefaultColorKind::Background,
+                color: crate::terminal_theme::RgbColor {
+                    r: 24,
+                    g: 24,
+                    b: 37
+                },
+            }]
         ));
     }
 

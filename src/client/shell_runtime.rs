@@ -749,8 +749,10 @@ pub(super) fn finish_client_shell_input(
                         false,
                     );
                 }
-                continue;
+            } else {
+                write_to_server(endpoints, &request).map_err(ClientError::ConnectionLost)?;
             }
+            continue;
         }
         // Host focus belongs to a pending target even when the source has gone offline or has
         // already had its surface revoked. Route it before the ordinary source-online gate.

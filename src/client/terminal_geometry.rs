@@ -1,4 +1,6 @@
 use std::io;
+#[cfg(windows)]
+use std::io::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -190,6 +192,96 @@ pub(super) fn write_host_terminal_appearance_query(mut writer: impl io::Write) -
 
 pub(super) fn query_host_terminal_theme() {
     let _ = write_host_terminal_theme_query(io::stdout());
+}
+
+#[cfg(windows)]
+pub(super) fn query_host_terminal_theme_sync() -> (Vec<crate::raw_input::RawInputEvent>, bool) {
+    use std::time::{Duration, Instant};
+    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::ReadFile;
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, GetStdHandle, ENABLE_VIRTUAL_TERMINAL_INPUT, STD_INPUT_HANDLE,
+    };
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+    const WAIT_OBJECT_0: u32 = 0;
+    const WAIT_TIMEOUT: u32 = 258;
+    const EXPECTED_COLOR_REPLIES: usize = 258;
+    const WAIT_SLICE: Duration = Duration::from_millis(10);
+    const TOTAL_WAIT: Duration = Duration::from_millis(300);
+
+    let handle: HANDLE = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+        return (Vec::new(), false);
+    }
+    let mut mode = 0;
+    if unsafe { GetConsoleMode(handle, &mut mode) } == 0
+        || mode & ENABLE_VIRTUAL_TERMINAL_INPUT == 0
+    {
+        return (Vec::new(), false);
+    }
+
+    let mut framer = crate::raw_input::RawInputFramer::for_host_input();
+    framer.host_color_query_sent();
+    framer.enable_host_color_scheme_change_tracking();
+    if write_host_terminal_theme_query(io::stdout()).is_err() {
+        return (Vec::new(), false);
+    }
+
+    let deadline = Instant::now() + TOTAL_WAIT;
+    let mut replies = 0;
+    let mut events = Vec::new();
+    while replies < EXPECTED_COLOR_REPLIES && Instant::now() < deadline {
+        match unsafe { WaitForSingleObject(handle, WAIT_SLICE.as_millis() as u32) } {
+            WAIT_OBJECT_0 => {
+                let mut buffer = [0u8; 4096];
+                let mut read = 0;
+                if unsafe {
+                    ReadFile(
+                        handle,
+                        buffer.as_mut_ptr().cast(),
+                        buffer.len() as u32,
+                        &mut read,
+                        std::ptr::null_mut(),
+                    )
+                } == 0
+                {
+                    break;
+                }
+                if read == 0 {
+                    continue;
+                }
+                let batch = framer.push(&buffer[..read as usize]);
+                for event in &batch {
+                    replies += match event {
+                        crate::raw_input::RawInputEvent::HostDefaultColor { .. } => 1,
+                        crate::raw_input::RawInputEvent::HostPaletteColors { colors } => {
+                            colors.len()
+                        }
+                        _ => 0,
+                    };
+                }
+                events.extend(batch);
+            }
+            WAIT_TIMEOUT => {}
+            _ => break,
+        }
+    }
+    events.extend(framer.flush_timeout());
+    let complete = replies >= EXPECTED_COLOR_REPLIES;
+    if let Some(path) = std::env::var_os("HERDR_WINDOWS_INPUT_TRACE_FILE") {
+        if let Ok(mut trace) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(
+                trace,
+                "host-color-query-replies={replies} complete={complete}"
+            );
+        }
+    }
+    (events, complete)
 }
 
 pub(super) fn should_query_host_terminal_theme() -> bool {

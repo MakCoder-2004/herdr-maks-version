@@ -128,7 +128,15 @@ pub(super) fn setup_terminal_with_capabilities(
 }
 
 pub(super) fn should_enable_host_color_scheme_reports(enable_client_protocols: bool) -> bool {
-    enable_client_protocols && should_query_host_terminal_theme()
+    #[cfg(windows)]
+    {
+        let _ = enable_client_protocols;
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        enable_client_protocols && should_query_host_terminal_theme()
+    }
 }
 
 /// Guard that restores the terminal when dropped.

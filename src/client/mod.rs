@@ -62,6 +62,9 @@ pub use terminal_sessions::{run_terminal_session_control, run_terminal_session_o
 
 #[cfg(not(windows))]
 use terminal_geometry::query_host_terminal_appearance;
+use terminal_geometry::query_host_terminal_theme;
+#[cfg(windows)]
+use terminal_geometry::query_host_terminal_theme_sync;
 #[cfg(test)]
 use terminal_geometry::{
     cell_size_fallback, current_terminal_geometry_with, ioctl_cell_size, pack_cell_size,
@@ -70,7 +73,7 @@ use terminal_geometry::{
 };
 use terminal_geometry::{
     host_cell_size_query_required, initial_terminal_geometry, query_host_cell_size,
-    query_host_terminal_theme, resize_poll_loop, should_query_host_terminal_theme,
+    resize_poll_loop, should_query_host_terminal_theme,
 };
 #[cfg(unix)]
 use terminal_geometry::{reported_cell_size_from_events, store_reported_cell_size};
@@ -518,6 +521,24 @@ async fn run_client_loop(
     let stdin_sgr_pixels_active = host_sgr_pixels_active.clone();
     let stdin_escape_disambiguation_active = config.host_escape_disambiguation_active;
     let stdin_initial_host_input = std::mem::take(&mut config.initial_host_input);
+    #[cfg(windows)]
+    let host_color_query_sent_to_reader = if will_query_host_terminal_theme {
+        let (events, complete) = query_host_terminal_theme_sync();
+        if !events.is_empty()
+            && stdin_tx
+                .try_send(ClientLoopEvent::StdinHostTheme(events))
+                .is_err()
+        {
+            warn!(
+                "dropping initial host terminal theme responses because the client queue is full"
+            );
+        }
+        !complete
+    } else {
+        false
+    };
+    #[cfg(not(windows))]
+    let host_color_query_sent_to_reader = will_query_host_terminal_theme;
     #[cfg(unix)]
     let stdin_direct_response = state.direct_graphics_response.clone();
     #[cfg(unix)]
@@ -529,7 +550,7 @@ async fn run_client_loop(
         input::stdin_reader_loop(
             stdin_tx,
             &stdin_quit,
-            will_query_host_terminal_theme,
+            host_color_query_sent_to_reader,
             will_query_host_cell_size,
             stdin_mouse_capture_active,
             stdin_sgr_pixels_active,
@@ -542,9 +563,9 @@ async fn run_client_loop(
         );
     });
 
+    #[cfg(not(windows))]
     if will_query_host_terminal_theme {
         query_host_terminal_theme();
-        #[cfg(not(windows))]
         if state.shell.is_some() {
             query_host_terminal_appearance();
         }
